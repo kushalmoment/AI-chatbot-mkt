@@ -18,13 +18,19 @@ from routes.chat import chat_bp
 # Initialize Firebase
 key_json_string = os.getenv("FIREBASE_KEY_JSON") # Renderで設定した "FIREBASE_KEY_JSON" を読み込む
 if not key_json_string:
-    raise ValueError("FIREBASE_KEY_JSON environment variable not set.")
-
-try:
-    # 環境変数から読み込んだJSON文字列を辞書（dict）に変換
-    key_dict = json.loads(key_json_string)
-except json.JSONDecodeError:
-    raise ValueError("Failed to decode FIREBASE_KEY_JSON. Check the value in Render.")
+    # Fallback to local firebase-key.json file for development
+    key_path = Path(__file__).parent / 'firebase-key.json'
+    try:
+        with open(key_path, 'r') as f:
+            key_dict = json.load(f)
+    except FileNotFoundError:
+        raise ValueError("FIREBASE_KEY_JSON environment variable not set and firebase-key.json not found.")
+else:
+    try:
+        # 環境変数から読み込んだJSON文字列を辞書（dict）に変換
+        key_dict = json.loads(key_json_string)
+    except json.JSONDecodeError:
+        raise ValueError("Failed to decode FIREBASE_KEY_JSON. Check the value in Render.")
 
 cred = credentials.Certificate(key_dict) # ファイルパスではなく、中身（辞書）を直接渡す
 firebase_admin.initialize_app(cred)
