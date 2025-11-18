@@ -10,9 +10,8 @@ try:
     db = firestore.client()
 except ValueError:
     # アプリがまだ初期化されていない場合（テスト時など）
-    cred = credentials.Certificate("backend/firebase-key.json")
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
+    # Firebaseがapp.pyで初期化されているはずなので、ここではエラーを投げる
+    raise ValueError("Firebase app not initialized. Ensure app.py initializes Firebase before importing this module.")
 
 chat_bp = Blueprint("chat_bp", __name__)
 

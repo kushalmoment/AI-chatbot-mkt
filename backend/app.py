@@ -11,9 +11,6 @@ from firebase_admin import credentials
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Import your chat blueprint
-from routes.chat import chat_bp
-
 # --- Firebase Initialization ---
 # This block securely loads credentials from Render's environment variables in production,
 # but falls back to a local .json file for development.
@@ -38,7 +35,10 @@ else:
 
 # 4. Initialize Firebase with the loaded credentials (as a dictionary)
 cred = credentials.Certificate(key_dict)
-firebase_admin.initialize_app(cred)
+try:
+    firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app(cred)
 # --- End of Firebase Initialization ---
 
 # Create and configure the Flask app
@@ -52,6 +52,9 @@ app.static_url_path = '/static'
 
 # Define the path to the main frontend build directory
 frontend_build_path = (Path(app.root_path) / '..' / 'frontend' / 'build').resolve()
+
+# Import your chat blueprint after Firebase initialization
+from routes.chat import chat_bp
 
 # Register your API blueprint
 app.register_blueprint(chat_bp, url_prefix='/api/chat')
