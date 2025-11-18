@@ -1,24 +1,59 @@
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.cloud import firestore as gcf
 from flask import Blueprint, request, jsonify
 from services.gemini_service import chat_with_gemini
 
-chat_bp = Blueprint('chat_bp', __name__)
+# Firestoreデータベースのクライアントを初期化
+# この初期化は app.py の最初で行うべきです
+try:
+    db = firestore.client()
+except ValueError:
+    # アプリがまだ初期化されていない場合（テスト時など）
+    cred = credentials.Certificate("backend/firebase-key.json")
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
 
-@chat_bp.route('/message', methods=['POST'])
-def handle_chat():
-    """
-    Handles the chat request, calls the Gemini service, and returns a response.
-    """
-    data = request.get_json()
-    if not data or 'message' not in data:
-        return jsonify({"error": "No message provided"}), 400
+chat_bp = Blueprint("chat_bp", __name__)
 
-    user_message = data['message']
-    
-    # Call the function that talks to the Gemini API
-    bot_response = chat_with_gemini(user_message)
-    
-    # Return the response or an error to the frontend
-    if bot_response:
-        return jsonify({"reply": bot_response})
-    else:
-        return jsonify({"error": "Failed to get a response from the AI"}), 500
+@chat_bp.route("/message", methods=["POST"])
+def chat_message():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+        # 変更点： フロントから送られたuserIdを取得
+        user_id = data.get("userId")
+        user_message = data.get("message")
+
+        if not user_id or not user_message:
+            return jsonify({"error": "userIdとmessageは必須です"}), 400
+
+        # 1. Gemini APIに応答をリクエスト
+        ai_response = chat_with_gemini(user_message)
+
+        if ai_response:
+            # 2. 【★最重要★】会話履歴をFirestoreに保存
+            try:
+                # 'conversations' というコレクションに、ユーザーID名のドキュメントを作成
+                conversation_ref = db.collection("conversations").document(user_id)
+                
+                # そのドキュメント内の 'messages' という配列に、会話を追加していく
+                conversation_ref.set({
+                    "messages": gcf.ArrayUnion([
+                        {"role": "user", "content": user_message, "timestamp": gcf.SERVER_TIMESTAMP},
+                        {"role": "assistant", "content": ai_response, "timestamp": gcf.SERVER_TIMESTAMP}
+                    ])
+                }, merge=True) # merge=Trueで、ドキュメントが存在すれば追記、なければ新規作成
+            except Exception as e:
+                print(f"Firestoreへの保存中にエラーが発生: {e}")
+                # ここではエラーを返さず、会話は続行させる（チャットが止まらないようにするため）
+
+            # 3. フロントエンドに応答を返す
+            return jsonify({"reply": ai_response})
+        else:
+            return jsonify({"error": "AIからの応答がありません"}), 500
+
+    except Exception as e:
+        print(f"チャット処理中にエラーが発生: {e}")
+        return jsonify({"error": str(e)}), 500
